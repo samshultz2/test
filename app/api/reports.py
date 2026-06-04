@@ -23,350 +23,200 @@ def dashboard():
         return err
 
     db = get_db()
-    today = date.today()
-    today_str = today.isoformat()
-    this_month = today.strftime("%Y-%m")
-    last_month = (today.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+    today_dt = date.today()
+    month = request.args.get("month", "") or today_dt.strftime("%Y-%m")
+    today_str = today_dt.isoformat()
+    last_month_str = (today_dt.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
 
-    # Sync billing for all eligible students and groups
-    students_all = db.execute(
-        "SELECT id FROM students WHERE is_active=1 AND on_hold=0 AND family_group_id IS NULL"
-    ).fetchall()
-    for s in students_all:
+    # Sync billing
+    for s in db.execute("SELECT id FROM students WHERE is_active=1 AND on_hold=0 AND family_group_id IS NULL").fetchall():
         ensure_all_records(s["id"], db=db)
-
-    groups_all = db.execute(
-        "SELECT id FROM family_groups WHERE is_active=1 AND on_hold=0 AND start_date IS NOT NULL"
-    ).fetchall()
-    for g in groups_all:
+    for g in db.execute("SELECT id FROM family_groups WHERE is_active=1 AND on_hold=0 AND start_date IS NOT NULL").fetchall():
         ensure_all_group_records(g["id"], db=db)
 
-    # Counts
-    total_students = db.execute(
-        "SELECT COUNT(*) FROM students WHERE is_active=1"
-    ).fetchone()[0]
-    total_groups = db.execute(
-        "SELECT COUNT(*) FROM family_groups WHERE is_active=1"
-    ).fetchone()[0]
-    on_hold_students = db.execute(
-        "SELECT COUNT(*) FROM students WHERE is_active=1 AND on_hold=1"
-    ).fetchone()[0]
-    on_hold_groups = db.execute(
-        "SELECT COUNT(*) FROM family_groups WHERE is_active=1 AND on_hold=1"
-    ).fetchone()[0]
-    on_hold_count = on_hold_students + on_hold_groups
+    # ── KPIs ─────────────────────────────────────────────────────────────────
+    student_count = db.execute("SELECT COUNT(*) FROM students WHERE is_active=1").fetchone()[0]
+    group_count   = db.execute("SELECT COUNT(*) FROM family_groups WHERE is_active=1").fetchone()[0]
 
-    # Total collected (all time)
-    total_collected_ind = db.execute(
-        "SELECT COALESCE(SUM(amount),0) FROM payments WHERE is_paid=1"
-    ).fetchone()[0]
-    total_collected_grp = db.execute(
-        "SELECT COALESCE(SUM(amount),0) FROM group_payments WHERE is_paid=1"
-    ).fetchone()[0]
-    total_collected = total_collected_ind + total_collected_grp
+    collected_ind = db.execute("SELECT COALESCE(SUM(amount),0) FROM payments WHERE is_paid=1 AND payment_month=?", (month,)).fetchone()[0]
+    collected_grp = db.execute("SELECT COALESCE(SUM(amount),0) FROM group_payments WHERE is_paid=1 AND payment_month=?", (month,)).fetchone()[0]
+    collected = collected_ind + collected_grp
 
-    # This period: current month expected vs collected
-    this_period_collected_ind = db.execute(
-        "SELECT COALESCE(SUM(amount),0) FROM payments WHERE is_paid=1 AND payment_month=?",
-        (this_month,),
-    ).fetchone()[0]
-    this_period_collected_grp = db.execute(
-        "SELECT COALESCE(SUM(amount),0) FROM group_payments WHERE is_paid=1 AND payment_month=?",
-        (this_month,),
-    ).fetchone()[0]
-    this_period_collected = this_period_collected_ind + this_period_collected_grp
+    expected_ind = db.execute("SELECT COALESCE(SUM(amount),0) FROM payments WHERE payment_month=?", (month,)).fetchone()[0]
+    expected_grp = db.execute("SELECT COALESCE(SUM(amount),0) FROM group_payments WHERE payment_month=?", (month,)).fetchone()[0]
+    expected = expected_ind + expected_grp
 
-    this_period_expected_ind = db.execute(
-        "SELECT COALESCE(SUM(amount),0) FROM payments WHERE payment_month=?",
-        (this_month,),
-    ).fetchone()[0]
-    this_period_expected_grp = db.execute(
-        "SELECT COALESCE(SUM(amount),0) FROM group_payments WHERE payment_month=?",
-        (this_month,),
-    ).fetchone()[0]
-    this_period_expected = this_period_expected_ind + this_period_expected_grp
+    alltime_ind = db.execute("SELECT COALESCE(SUM(amount),0) FROM payments WHERE is_paid=1").fetchone()[0]
+    alltime_grp = db.execute("SELECT COALESCE(SUM(amount),0) FROM group_payments WHERE is_paid=1").fetchone()[0]
+    alltime = alltime_ind + alltime_grp
 
-    # Overdue: unpaid records with due_date < today
     overdue_ind = db.execute(
-        "SELECT p.id, p.amount, p.due_date, p.payment_month, s.full_name, s.subject, s.id as sid "
-        "FROM payments p JOIN students s ON p.student_id=s.id "
-        "WHERE p.is_paid=0 AND p.due_date < ? AND s.is_active=1",
-        (today_str,),
+        "SELECT p.id, p.amount, p.due_date FROM payments p JOIN students s ON p.student_id=s.id "
+        "WHERE p.is_paid=0 AND p.due_date < ? AND s.is_active=1", (today_str,)
     ).fetchall()
     overdue_grp = db.execute(
-        "SELECT gp.id, gp.amount, gp.due_date, gp.payment_month, fg.group_name, fg.id as gid "
-        "FROM group_payments gp JOIN family_groups fg ON gp.group_id=fg.id "
-        "WHERE gp.is_paid=0 AND gp.due_date < ? AND fg.is_active=1",
-        (today_str,),
+        "SELECT gp.id, gp.amount, gp.due_date FROM group_payments gp JOIN family_groups fg ON gp.group_id=fg.id "
+        "WHERE gp.is_paid=0 AND gp.due_date < ? AND fg.is_active=1", (today_str,)
     ).fetchall()
+    overdue_count  = len(overdue_ind) + len(overdue_grp)
+    overdue_amount = sum(r["amount"] for r in overdue_ind) + sum(r["amount"] for r in overdue_grp)
 
-    overdue_names = []
-    for r in overdue_ind:
-        overdue_names.append({
-            "name": r["full_name"],
-            "amount": r["amount"],
-            "due_date": r["due_date"],
-            "pid": r["id"],
-            "sid": r["sid"],
-            "month": r["payment_month"],
-            "subject": r["subject"],
-            "is_group": False,
-        })
-    for r in overdue_grp:
-        overdue_names.append({
-            "name": r["group_name"],
-            "amount": r["amount"],
-            "due_date": r["due_date"],
-            "pid": r["id"],
-            "gid": r["gid"],
-            "month": r["payment_month"],
-            "subject": "",
-            "is_group": True,
-        })
+    collection_rate = round(collected / expected * 100, 1) if expected > 0 else 0.0
 
-    overdue = len(overdue_names)
-    overdue_amount = sum(x["amount"] for x in overdue_names)
-
-    # Due soon: unpaid with due_date between today and 7 days from now
-    soon_cutoff = (today + timedelta(days=7)).isoformat()
-    due_soon_ind = db.execute(
-        "SELECT p.id, p.amount, p.due_date, p.payment_month, s.full_name, s.subject, s.id as sid "
-        "FROM payments p JOIN students s ON p.student_id=s.id "
-        "WHERE p.is_paid=0 AND p.due_date >= ? AND p.due_date <= ? AND s.is_active=1",
-        (today_str, soon_cutoff),
-    ).fetchall()
-    due_soon_grp = db.execute(
-        "SELECT gp.id, gp.amount, gp.due_date, gp.payment_month, fg.group_name, fg.id as gid "
-        "FROM group_payments gp JOIN family_groups fg ON gp.group_id=fg.id "
-        "WHERE gp.is_paid=0 AND gp.due_date >= ? AND gp.due_date <= ? AND fg.is_active=1",
-        (today_str, soon_cutoff),
-    ).fetchall()
-
-    due_soon = []
-    for r in due_soon_ind:
-        due_soon.append({
-            "name": r["full_name"],
-            "amount": r["amount"],
-            "due_date": r["due_date"],
-            "pid": r["id"],
-            "sid": r["sid"],
-            "month": r["payment_month"],
-            "subject": r["subject"],
-            "is_group": False,
-        })
-    for r in due_soon_grp:
-        due_soon.append({
-            "name": r["group_name"],
-            "amount": r["amount"],
-            "due_date": r["due_date"],
-            "pid": r["id"],
-            "gid": r["gid"],
-            "month": r["payment_month"],
-            "subject": "",
-            "is_group": True,
-        })
-
-    # Recent payments (last 10)
-    recent_ind = db.execute(
-        "SELECT p.amount, p.payment_month, p.paid_date, p.payment_method, p.paid_by, "
-        "s.full_name as name, s.class as cls, 'individual' as ptype "
-        "FROM payments p JOIN students s ON p.student_id=s.id "
-        "WHERE p.is_paid=1 ORDER BY p.paid_date DESC LIMIT 10",
-    ).fetchall()
-    recent_grp = db.execute(
-        "SELECT gp.amount, gp.payment_month, gp.paid_date, gp.payment_method, gp.paid_by, "
-        "fg.group_name as name, '' as cls, 'group' as ptype "
-        "FROM group_payments gp JOIN family_groups fg ON gp.group_id=fg.id "
-        "WHERE gp.is_paid=1 ORDER BY gp.paid_date DESC LIMIT 10",
-    ).fetchall()
-
-    combined_recent = sorted(
-        [dict(r) for r in recent_ind] + [dict(r) for r in recent_grp],
-        key=lambda x: x.get("paid_date") or "",
-        reverse=True,
-    )[:10]
-
-    # Trend: last 6 months
-    trend = []
+    # ── Chart: last 6 months ─────────────────────────────────────────────────
+    chart = []
     for i in range(5, -1, -1):
-        d = today.replace(day=1) - relativedelta(months=i)
+        d = today_dt.replace(day=1) - relativedelta(months=i)
         mo = d.strftime("%Y-%m")
-        ind_amt = db.execute(
-            "SELECT COALESCE(SUM(amount),0) FROM payments WHERE is_paid=1 AND payment_month=?",
-            (mo,),
-        ).fetchone()[0]
-        grp_amt = db.execute(
-            "SELECT COALESCE(SUM(amount),0) FROM group_payments WHERE is_paid=1 AND payment_month=?",
-            (mo,),
-        ).fetchone()[0]
-        trend.append({"month": mo, "amount": ind_amt + grp_amt})
+        ind_amt = db.execute("SELECT COALESCE(SUM(amount),0) FROM payments WHERE is_paid=1 AND payment_month=?", (mo,)).fetchone()[0]
+        grp_amt = db.execute("SELECT COALESCE(SUM(amount),0) FROM group_payments WHERE is_paid=1 AND payment_month=?", (mo,)).fetchone()[0]
+        chart.append({"label": d.strftime("%b"), "amount": ind_amt + grp_amt})
 
-    # Cash vs transfer totals
-    cash_ind = db.execute(
-        "SELECT COALESCE(SUM(amount),0) FROM payments WHERE is_paid=1 AND payment_method='cash'"
-    ).fetchone()[0]
-    cash_grp = db.execute(
-        "SELECT COALESCE(SUM(amount),0) FROM group_payments WHERE is_paid=1 AND payment_method='cash'"
-    ).fetchone()[0]
-    cash_total = cash_ind + cash_grp
+    # ── Overdue list ─────────────────────────────────────────────────────────
+    overdue_list = []
+    for r in db.execute(
+        "SELECT p.id as pid, s.full_name as name, p.amount, p.due_date, p.payment_month "
+        "FROM payments p JOIN students s ON p.student_id=s.id "
+        "WHERE p.is_paid=0 AND p.due_date < ? AND s.is_active=1 ORDER BY p.due_date", (today_str,)
+    ).fetchall():
+        overdue_list.append({"pid": r["pid"], "name": r["name"], "amount": r["amount"], "due_date": r["due_date"], "month": r["payment_month"], "is_group": False})
+    for r in db.execute(
+        "SELECT gp.id as pid, fg.group_name as name, gp.amount, gp.due_date, gp.payment_month "
+        "FROM group_payments gp JOIN family_groups fg ON gp.group_id=fg.id "
+        "WHERE gp.is_paid=0 AND gp.due_date < ? AND fg.is_active=1 ORDER BY gp.due_date", (today_str,)
+    ).fetchall():
+        overdue_list.append({"pid": r["pid"], "name": r["name"], "amount": r["amount"], "due_date": r["due_date"], "month": r["payment_month"], "is_group": True})
 
-    transfer_ind = db.execute(
-        "SELECT COALESCE(SUM(amount),0) FROM payments WHERE is_paid=1 AND payment_method='transfer'"
-    ).fetchone()[0]
-    transfer_grp = db.execute(
-        "SELECT COALESCE(SUM(amount),0) FROM group_payments WHERE is_paid=1 AND payment_method='transfer'"
-    ).fetchone()[0]
-    transfer_total = transfer_ind + transfer_grp
+    # ── Due soon (next 7 days) ───────────────────────────────────────────────
+    soon_cutoff = (today_dt + timedelta(days=7)).isoformat()
+    due_soon = []
+    for r in db.execute(
+        "SELECT p.id as pid, s.full_name as name, p.amount, p.due_date "
+        "FROM payments p JOIN students s ON p.student_id=s.id "
+        "WHERE p.is_paid=0 AND p.due_date >= ? AND p.due_date <= ? AND s.is_active=1", (today_str, soon_cutoff)
+    ).fetchall():
+        due_soon.append({"pid": r["pid"], "name": r["name"], "amount": r["amount"], "due_date": r["due_date"], "is_group": False})
+    for r in db.execute(
+        "SELECT gp.id as pid, fg.group_name as name, gp.amount, gp.due_date "
+        "FROM group_payments gp JOIN family_groups fg ON gp.group_id=fg.id "
+        "WHERE gp.is_paid=0 AND gp.due_date >= ? AND gp.due_date <= ? AND fg.is_active=1", (today_str, soon_cutoff)
+    ).fetchall():
+        due_soon.append({"pid": r["pid"], "name": r["name"], "amount": r["amount"], "due_date": r["due_date"], "is_group": True})
 
-    # This month vs last month
-    this_month_collected_ind = db.execute(
-        "SELECT COALESCE(SUM(amount),0) FROM payments WHERE is_paid=1 AND payment_month=?",
-        (this_month,),
-    ).fetchone()[0]
-    this_month_collected_grp = db.execute(
-        "SELECT COALESCE(SUM(amount),0) FROM group_payments WHERE is_paid=1 AND payment_month=?",
-        (this_month,),
-    ).fetchone()[0]
-    this_month_collected = this_month_collected_ind + this_month_collected_grp
+    # ── Unpaid this period ───────────────────────────────────────────────────
+    unpaid = []
+    for r in db.execute(
+        "SELECT p.id as pid, s.full_name as name, s.class as class_name, p.amount, p.due_date "
+        "FROM payments p JOIN students s ON p.student_id=s.id "
+        "WHERE p.is_paid=0 AND p.payment_month=? AND s.is_active=1 ORDER BY p.due_date", (month,)
+    ).fetchall():
+        days = (today_dt - date.fromisoformat(r["due_date"])).days if r["due_date"] else 0
+        unpaid.append({"pid": r["pid"], "name": r["name"], "class_name": r["class_name"] or "", "amount": r["amount"], "due_date": r["due_date"], "days_overdue": max(0, days), "is_group": False})
+    for r in db.execute(
+        "SELECT gp.id as pid, fg.group_name as name, gp.amount, gp.due_date "
+        "FROM group_payments gp JOIN family_groups fg ON gp.group_id=fg.id "
+        "WHERE gp.is_paid=0 AND gp.payment_month=? AND fg.is_active=1 ORDER BY gp.due_date", (month,)
+    ).fetchall():
+        days = (today_dt - date.fromisoformat(r["due_date"])).days if r["due_date"] else 0
+        unpaid.append({"pid": r["pid"], "name": r["name"], "class_name": "", "amount": r["amount"], "due_date": r["due_date"], "days_overdue": max(0, days), "is_group": True})
 
-    last_month_collected_ind = db.execute(
-        "SELECT COALESCE(SUM(amount),0) FROM payments WHERE is_paid=1 AND payment_month=?",
-        (last_month,),
-    ).fetchone()[0]
-    last_month_collected_grp = db.execute(
-        "SELECT COALESCE(SUM(amount),0) FROM group_payments WHERE is_paid=1 AND payment_month=?",
-        (last_month,),
-    ).fetchone()[0]
-    last_month_collected = last_month_collected_ind + last_month_collected_grp
-
-    if last_month_collected > 0:
-        mom_change = ((this_month_collected - last_month_collected) / last_month_collected) * 100
-    else:
-        mom_change = 0.0
-
-    # Collection rate
-    total_expected_ind = db.execute(
-        "SELECT COALESCE(SUM(amount),0) FROM payments"
-    ).fetchone()[0]
-    total_expected_grp = db.execute(
-        "SELECT COALESCE(SUM(amount),0) FROM group_payments"
-    ).fetchone()[0]
-    total_expected = total_expected_ind + total_expected_grp
-    collection_rate = (total_collected / total_expected * 100) if total_expected > 0 else 0.0
-
-    # Average monthly (from trend data)
-    trend_amounts = [t["amount"] for t in trend if t["amount"] > 0]
-    avg_monthly = sum(trend_amounts) / len(trend_amounts) if trend_amounts else 0.0
-    projected_annual = avg_monthly * 12
-
-    # Top payers: students with most consecutive paid months
-    all_students = db.execute(
-        "SELECT id, full_name, class FROM students WHERE is_active=1"
-    ).fetchall()
+    # ── Top payers (by streak) ───────────────────────────────────────────────
     top_payers = []
-    for s in all_students:
-        paid_months = db.execute(
-            "SELECT payment_month FROM payments WHERE student_id=? AND is_paid=1 ORDER BY payment_month DESC",
-            (s["id"],),
-        ).fetchall()
+    for s in db.execute("SELECT id, full_name FROM students WHERE is_active=1").fetchall():
+        pm = db.execute("SELECT payment_month FROM payments WHERE student_id=? AND is_paid=1 ORDER BY payment_month DESC", (s["id"],)).fetchall()
         streak = 0
-        if paid_months:
-            months_list = [p["payment_month"] for p in paid_months]
+        if pm:
+            ml = [p["payment_month"] for p in pm]
             streak = 1
-            for i in range(1, len(months_list)):
-                expected = (
-                    datetime.strptime(months_list[i-1], "%Y-%m").replace(day=1)
-                    - relativedelta(months=1)
-                ).strftime("%Y-%m")
-                if months_list[i] == expected:
+            for i in range(1, len(ml)):
+                exp = (datetime.strptime(ml[i-1], "%Y-%m").replace(day=1) - relativedelta(months=1)).strftime("%Y-%m")
+                if ml[i] == exp:
                     streak += 1
                 else:
                     break
+        total_paid = db.execute("SELECT COALESCE(SUM(amount),0) FROM payments WHERE student_id=? AND is_paid=1", (s["id"],)).fetchone()[0]
         if streak > 0:
-            top_payers.append({"name": s["full_name"], "class": s["class"], "streak": streak})
-
+            top_payers.append({"name": s["full_name"], "total_paid": total_paid, "streak": streak})
     top_payers.sort(key=lambda x: x["streak"], reverse=True)
     top_payers = top_payers[:5]
 
-    # Debtors: students with multiple unpaid months
-    debtors = []
-    for s in all_students:
-        unpaid = db.execute(
-            "SELECT COUNT(*) as cnt, COALESCE(SUM(amount),0) as amt FROM payments "
-            "WHERE student_id=? AND is_paid=0",
-            (s["id"],),
-        ).fetchone()
-        if unpaid["cnt"] >= 2:
-            debtors.append({
-                "name": s["full_name"],
-                "class": s["class"],
-                "months": unpaid["cnt"],
-                "amount": unpaid["amt"],
-            })
-    debtors.sort(key=lambda x: x["amount"], reverse=True)
-    debtors = debtors[:10]
-
-    # Class breakdown
-    classes = db.execute(
-        "SELECT DISTINCT class FROM students WHERE is_active=1"
+    # ── Income by class ──────────────────────────────────────────────────────
+    class_rows = db.execute(
+        "SELECT s.class as name, COALESCE(SUM(CASE WHEN p.is_paid=1 AND p.payment_month=? THEN p.amount ELSE 0 END),0) as amount "
+        "FROM students s LEFT JOIN payments p ON p.student_id=s.id "
+        "WHERE s.is_active=1 GROUP BY s.class ORDER BY amount DESC", (month,)
     ).fetchall()
-    class_breakdown = []
-    for cls_row in classes:
-        cls = cls_row["class"]
-        count = db.execute(
-            "SELECT COUNT(*) FROM students WHERE is_active=1 AND class=?",
-            (cls,),
-        ).fetchone()[0]
-        paid = db.execute(
-            "SELECT COALESCE(SUM(p.amount),0) FROM payments p "
-            "JOIN students s ON p.student_id=s.id "
-            "WHERE s.is_active=1 AND s.class=? AND p.is_paid=1",
-            (cls,),
-        ).fetchone()[0]
-        owed = db.execute(
-            "SELECT COALESCE(SUM(p.amount),0) FROM payments p "
-            "JOIN students s ON p.student_id=s.id "
-            "WHERE s.is_active=1 AND s.class=? AND p.is_paid=0",
-            (cls,),
-        ).fetchone()[0]
-        class_breakdown.append({"class": cls, "count": count, "paid": paid, "owed": owed})
+    total_cls = sum(r["amount"] for r in class_rows)
+    income_by_class = [{"name": r["name"] or "No class", "amount": r["amount"], "pct": round(r["amount"] / total_cls * 100) if total_cls > 0 else 0} for r in class_rows if r["amount"] > 0]
 
-    # Unpaid this period
-    unpaid_this_period_ind = db.execute(
-        "SELECT COUNT(*) FROM payments WHERE is_paid=0 AND payment_month=?",
-        (this_month,),
-    ).fetchone()[0]
-    unpaid_this_period_grp = db.execute(
-        "SELECT COUNT(*) FROM group_payments WHERE is_paid=0 AND payment_month=?",
-        (this_month,),
-    ).fetchone()[0]
-    unpaid_this_period = unpaid_this_period_ind + unpaid_this_period_grp
+    # ── Worst debtors ────────────────────────────────────────────────────────
+    worst_debtors = []
+    for r in db.execute(
+        "SELECT s.full_name as name, COUNT(p.id) as months_owed, COALESCE(SUM(p.amount),0) as total_owed "
+        "FROM students s JOIN payments p ON p.student_id=s.id "
+        "WHERE p.is_paid=0 AND s.is_active=1 GROUP BY s.id, s.full_name "
+        "HAVING months_owed >= 1 ORDER BY total_owed DESC LIMIT 10"
+    ).fetchall():
+        worst_debtors.append({"name": r["name"], "months_owed": r["months_owed"], "total_owed": r["total_owed"]})
+
+    # ── Recent payments ──────────────────────────────────────────────────────
+    recent_ind = [{"name": r["name"], "paid_at": r["paid_at"], "method": r["method"] or "cash", "amount": r["amount"]} for r in db.execute(
+        "SELECT s.full_name as name, p.paid_date as paid_at, p.payment_method as method, p.amount "
+        "FROM payments p JOIN students s ON p.student_id=s.id WHERE p.is_paid=1 ORDER BY p.paid_date DESC LIMIT 10"
+    ).fetchall()]
+    recent_grp = [{"name": r["name"], "paid_at": r["paid_at"], "method": r["method"] or "cash", "amount": r["amount"]} for r in db.execute(
+        "SELECT fg.group_name as name, gp.paid_date as paid_at, gp.payment_method as method, gp.amount "
+        "FROM group_payments gp JOIN family_groups fg ON gp.group_id=fg.id WHERE gp.is_paid=1 ORDER BY gp.paid_date DESC LIMIT 10"
+    ).fetchall()]
+    recent_payments = sorted(recent_ind + recent_grp, key=lambda x: x.get("paid_at") or "", reverse=True)[:10]
+
+    # ── Month-over-month ─────────────────────────────────────────────────────
+    this_m_ind  = db.execute("SELECT COALESCE(SUM(amount),0) FROM payments WHERE is_paid=1 AND payment_month=?", (month,)).fetchone()[0]
+    this_m_grp  = db.execute("SELECT COALESCE(SUM(amount),0) FROM group_payments WHERE is_paid=1 AND payment_month=?", (month,)).fetchone()[0]
+    this_month_total = this_m_ind + this_m_grp
+
+    last_m_ind  = db.execute("SELECT COALESCE(SUM(amount),0) FROM payments WHERE is_paid=1 AND payment_month=?", (last_month_str,)).fetchone()[0]
+    last_m_grp  = db.execute("SELECT COALESCE(SUM(amount),0) FROM group_payments WHERE is_paid=1 AND payment_month=?", (last_month_str,)).fetchone()[0]
+    last_month_total = last_m_ind + last_m_grp
+
+    change = round((this_month_total - last_month_total) / last_month_total * 100, 1) if last_month_total > 0 else 0.0
+
+    # ── Payment split ────────────────────────────────────────────────────────
+    cash_ind = db.execute("SELECT COALESCE(SUM(amount),0) FROM payments WHERE is_paid=1 AND payment_method='cash'").fetchone()[0]
+    cash_grp = db.execute("SELECT COALESCE(SUM(amount),0) FROM group_payments WHERE is_paid=1 AND payment_method='cash'").fetchone()[0]
+    xfer_ind = db.execute("SELECT COALESCE(SUM(amount),0) FROM payments WHERE is_paid=1 AND payment_method='transfer'").fetchone()[0]
+    xfer_grp = db.execute("SELECT COALESCE(SUM(amount),0) FROM group_payments WHERE is_paid=1 AND payment_method='transfer'").fetchone()[0]
+    cash_total = cash_ind + cash_grp
+    xfer_total = xfer_ind + xfer_grp
+    split_total = cash_total + xfer_total
+    payment_split = {
+        "cash": cash_total,
+        "cash_pct": round(cash_total / split_total * 100) if split_total > 0 else 0,
+        "transfer": xfer_total,
+        "transfer_pct": round(xfer_total / split_total * 100) if split_total > 0 else 0,
+    }
 
     return jsonify({
-        "total_students": total_students,
-        "total_groups": total_groups,
-        "on_hold_count": on_hold_count,
-        "total_collected": total_collected,
-        "this_period_collected": this_period_collected,
-        "this_period_expected": this_period_expected,
-        "overdue": overdue,
-        "overdue_amount": overdue_amount,
-        "overdue_names": overdue_names,
+        "kpis": {
+            "collected": collected,
+            "student_count": student_count,
+            "group_count": group_count,
+            "overdue_count": overdue_count,
+            "overdue_amount": overdue_amount,
+            "collection_rate": collection_rate,
+            "expected": expected,
+            "alltime": alltime,
+        },
+        "chart": chart,
+        "overdue": overdue_list,
         "due_soon": due_soon,
-        "recent_payments": combined_recent,
-        "trend": trend,
-        "cash_total": cash_total,
-        "transfer_total": transfer_total,
-        "this_month_collected": this_month_collected,
-        "last_month_collected": last_month_collected,
-        "mom_change": round(mom_change, 2),
-        "collection_rate": round(collection_rate, 2),
-        "avg_monthly": round(avg_monthly, 2),
-        "projected_annual": round(projected_annual, 2),
+        "unpaid": unpaid,
         "top_payers": top_payers,
-        "debtors": debtors,
-        "class_breakdown": class_breakdown,
-        "unpaid_this_period": unpaid_this_period,
+        "income_by_class": income_by_class,
+        "worst_debtors": worst_debtors,
+        "recent_payments": recent_payments,
+        "month_over_month": {"this_month": this_month_total, "last_month": last_month_total, "change": change},
+        "payment_split": payment_split,
     }), 200
 
 

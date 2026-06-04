@@ -73,7 +73,29 @@ def list_students():
         FROM students s LEFT JOIN family_groups fg ON s.family_group_id=fg.id
         WHERE s.is_active=1 ORDER BY s.full_name
     """).fetchall()
-    return jsonify([dict(r) for r in rows]), 200
+    this_month = __import__('datetime').date.today().strftime("%Y-%m")
+    result = []
+    for row in rows:
+        d = dict(row)
+        d['name'] = d.get('full_name', '')
+        d['class_name'] = d.get('class', '')
+        d['is_overdue'] = (d.get('overdue_count') or 0) > 0
+        d['group_id'] = d.get('family_group_id')
+        # current_paid: True if paid for current month (group members check group payment)
+        if d.get('family_group_id'):
+            grp_paid = db.execute(
+                "SELECT COUNT(*) FROM group_payments WHERE group_id=? AND is_paid=1 AND payment_month=?",
+                (d['family_group_id'], this_month)
+            ).fetchone()[0]
+            d['current_paid'] = grp_paid > 0
+        else:
+            d['current_paid'] = db.execute(
+                "SELECT COUNT(*) FROM payments WHERE student_id=? AND is_paid=1 AND payment_month=?",
+                (d['id'], this_month)
+            ).fetchone()[0] > 0
+        d['streak'] = 0
+        result.append(d)
+    return jsonify(result), 200
 
 
 # ---------------------------------------------------------------------------

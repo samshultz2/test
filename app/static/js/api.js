@@ -64,7 +64,7 @@ export class ApiClient {
   getCsrfToken()                { return this.get('/auth/csrf-token'); }
 
   // ── Dashboard ───────────────────────────────────────────────────
-  getDashboard()                { return this.get('/api/dashboard'); }
+  getDashboard(month)           { return this.get('/api/dashboard' + (month ? '?month=' + encodeURIComponent(month) : '')); }
 
   // ── Students ────────────────────────────────────────────────────
   getStudents()                 { return this.get('/api/students'); }
