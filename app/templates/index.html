@@ -1,49 +1,284 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0f1e">
+  <meta name="csrf-token" content="{{ csrf_token }}">
   <title>LessonPay</title>
-  <style>
-    body {
-      font-family: 'Segoe UI', Arial, sans-serif;
-      background: #f0f4f8;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      margin: 0;
-    }
-    .card {
-      background: #fff;
-      border-radius: 16px;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.10);
-      padding: 3rem 4rem;
-      text-align: center;
-      max-width: 480px;
-    }
-    h1 { color: #1e293b; margin-bottom: 0.5rem; }
-    p  { color: #64748b; font-size: 0.95rem; }
-    .badge {
-      display: inline-block;
-      background: #e0f2fe;
-      color: #0369a1;
-      border-radius: 20px;
-      padding: 4px 16px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      margin-bottom: 1.5rem;
-    }
-  </style>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+  <!-- App Styles -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-  <div class="card">
-    <div class="badge">LessonPay API</div>
-    <h1>LessonPay</h1>
-    <p>Private Tuition Payment Tracker &mdash; Flask backend running successfully.</p>
-    <p style="margin-top:1rem;font-size:0.8rem;color:#94a3b8;">
-      Connect your frontend to <code>/api/</code> and authenticate via <code>/auth/login</code>.
-    </p>
+
+<!-- ══════════════════════════════════════════════════════════
+     LOGIN OVERLAY
+     ══════════════════════════════════════════════════════════ -->
+<div id="auth-overlay" class="auth-overlay">
+  <div class="auth-brand">
+    <div class="auth-brand-icon">
+      <i data-lucide="credit-card" style="width:38px;height:38px;stroke:#fff"></i>
+    </div>
+    <div class="auth-brand-name">LessonPay</div>
+    <div class="auth-brand-sub">Lesson fee tracker</div>
   </div>
+
+  <div class="auth-card">
+    <!-- Tab switch -->
+    <div class="auth-tab-bar">
+      <button class="auth-tab active" id="auth-tab-pin">PIN</button>
+      <button class="auth-tab" id="auth-tab-password">Password</button>
+    </div>
+
+    <!-- PIN Section -->
+    <div id="auth-pin-section">
+      <div class="pin-display">
+        <div class="pin-dot"></div>
+        <div class="pin-dot"></div>
+        <div class="pin-dot"></div>
+        <div class="pin-dot"></div>
+      </div>
+
+      <div id="auth-error" class="text-red text-xs mb-3" style="min-height:18px;text-align:center"></div>
+
+      <div class="pin-pad">
+        <button class="pin-key" data-val="1">1</button>
+        <button class="pin-key" data-val="2">2</button>
+        <button class="pin-key" data-val="3">3</button>
+        <button class="pin-key" data-val="4">4</button>
+        <button class="pin-key" data-val="5">5</button>
+        <button class="pin-key" data-val="6">6</button>
+        <button class="pin-key" data-val="7">7</button>
+        <button class="pin-key" data-val="8">8</button>
+        <button class="pin-key" data-val="9">9</button>
+        <button class="pin-key clear" data-val="clear">⌫</button>
+        <button class="pin-key" data-val="0">0</button>
+        <button class="pin-key enter" data-val="enter">&#x2192;</button>
+      </div>
+    </div>
+
+    <!-- Password Section -->
+    <div id="auth-pass-section" class="hidden">
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input
+          type="password"
+          id="auth-password-input"
+          class="form-input"
+          placeholder="Enter your password"
+          autocomplete="current-password"
+        >
+      </div>
+      <div id="auth-error-pass" class="text-red text-xs mb-3" style="min-height:18px"></div>
+      <button class="btn btn-primary btn-block" id="auth-pass-submit">
+        <i data-lucide="lock"></i> Login
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     AUTO-LOCK OVERLAY
+     ══════════════════════════════════════════════════════════ -->
+<div id="lock-overlay" class="lock-overlay">
+  <div class="lock-icon">
+    <i data-lucide="lock"></i>
+  </div>
+  <div class="lock-title">App Locked</div>
+  <div class="lock-sub">Enter your PIN or password to continue</div>
+
+  <div style="width:100%;max-width:320px">
+    <!-- Tab switch -->
+    <div class="auth-tab-bar mb-3">
+      <button class="auth-tab active" id="lock-tab-pin">PIN</button>
+      <button class="auth-tab" id="lock-tab-password">Password</button>
+    </div>
+
+    <!-- Lock PIN -->
+    <div id="lock-pin-section">
+      <div class="pin-display">
+        <div class="pin-dot lock-pin-dot"></div>
+        <div class="pin-dot lock-pin-dot"></div>
+        <div class="pin-dot lock-pin-dot"></div>
+        <div class="pin-dot lock-pin-dot"></div>
+      </div>
+      <div id="lock-error" class="text-red text-xs mb-3" style="min-height:18px;text-align:center"></div>
+      <div class="pin-pad">
+        <button class="pin-key lock-pin-key" data-val="1">1</button>
+        <button class="pin-key lock-pin-key" data-val="2">2</button>
+        <button class="pin-key lock-pin-key" data-val="3">3</button>
+        <button class="pin-key lock-pin-key" data-val="4">4</button>
+        <button class="pin-key lock-pin-key" data-val="5">5</button>
+        <button class="pin-key lock-pin-key" data-val="6">6</button>
+        <button class="pin-key lock-pin-key" data-val="7">7</button>
+        <button class="pin-key lock-pin-key" data-val="8">8</button>
+        <button class="pin-key lock-pin-key" data-val="9">9</button>
+        <button class="pin-key clear lock-pin-key" data-val="clear">&#x232B;</button>
+        <button class="pin-key lock-pin-key" data-val="0">0</button>
+        <button class="pin-key enter lock-pin-key" data-val="enter">&#x2192;</button>
+      </div>
+    </div>
+
+    <!-- Lock Password -->
+    <div id="lock-pass-section" class="hidden">
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input
+          type="password"
+          id="lock-password-input"
+          class="form-input"
+          placeholder="Enter your password"
+          autocomplete="current-password"
+        >
+      </div>
+      <div id="lock-error-pass" class="text-red text-xs mb-3" style="min-height:18px"></div>
+      <button class="btn btn-primary btn-block" id="lock-pass-submit">
+        <i data-lucide="lock"></i> Unlock
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     MAIN APP SHELL
+     ══════════════════════════════════════════════════════════ -->
+<div id="app-shell">
+
+  <!-- ── Topbar ────────────────────────────────────────────── -->
+  <header class="topbar">
+    <a href="#" class="brand" onclick="window.app && window.app.navigate('dashboard');return false">
+      <div class="brand-icon">
+        <i data-lucide="credit-card" style="width:20px;height:20px;stroke:#fff"></i>
+      </div>
+      <span class="brand-name">LessonPay</span>
+    </a>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="btn-sync" title="Sync data">
+        <i data-lucide="refresh-ccw"></i>
+      </button>
+      <button class="icon-btn" id="btn-lock" title="Lock app">
+        <i data-lucide="lock"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── Main Content ──────────────────────────────────────── -->
+  <main class="main-content">
+
+    <!-- Dashboard Page -->
+    <section id="page-dashboard" class="page-section active">
+      <!-- Populated by DashboardModule -->
+    </section>
+
+    <!-- Students Page -->
+    <section id="page-students" class="page-section">
+      <!-- Populated by StudentsModule -->
+    </section>
+
+    <!-- Payments Page -->
+    <section id="page-payments" class="page-section">
+      <!-- Populated by PaymentsModule -->
+    </section>
+
+    <!-- Groups Page -->
+    <section id="page-groups" class="page-section">
+      <!-- Populated by GroupsModule -->
+    </section>
+
+    <!-- Reports Page -->
+    <section id="page-reports" class="page-section">
+      <!-- Populated by ReportsModule -->
+    </section>
+
+    <!-- Attendance Page -->
+    <section id="page-attendance" class="page-section">
+      <!-- Populated by AttendanceModule -->
+    </section>
+
+    <!-- Archive Page -->
+    <section id="page-archive" class="page-section">
+      <!-- Populated by app._loadArchive() -->
+    </section>
+
+    <!-- Timetable Page -->
+    <section id="page-timetable" class="page-section">
+      <!-- Populated by app._loadTimetable() -->
+    </section>
+
+  </main>
+
+  <!-- ── Floating Action Button ────────────────────────────── -->
+  <button class="fab hidden" id="fab-add" title="Add new">
+    <i data-lucide="plus"></i>
+  </button>
+
+  <!-- ── Bottom Navigation ─────────────────────────────────── -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-page="dashboard">
+      <div class="nav-indicator"></div>
+      <i data-lucide="layout-dashboard" style="width:20px;height:20px"></i>
+      <span>Home</span>
+    </button>
+    <button class="nav-item" data-page="students">
+      <div class="nav-indicator"></div>
+      <i data-lucide="users" style="width:20px;height:20px"></i>
+      <span>Students</span>
+    </button>
+    <button class="nav-item" data-page="payments">
+      <div class="nav-indicator"></div>
+      <i data-lucide="credit-card" style="width:20px;height:20px"></i>
+      <span>Payments</span>
+    </button>
+    <button class="nav-item" data-page="groups">
+      <div class="nav-indicator"></div>
+      <i data-lucide="home" style="width:20px;height:20px"></i>
+      <span>Groups</span>
+    </button>
+    <button class="nav-item" data-page="reports">
+      <div class="nav-indicator"></div>
+      <i data-lucide="bar-chart-2" style="width:20px;height:20px"></i>
+      <span>Reports</span>
+    </button>
+  </nav>
+
+</div><!-- /#app-shell -->
+
+<!-- ══════════════════════════════════════════════════════════
+     DRAWER / BOTTOM SHEET
+     ══════════════════════════════════════════════════════════ -->
+<div id="drawer-backdrop" class="drawer-backdrop"></div>
+<div id="main-drawer" class="drawer" role="dialog" aria-modal="true">
+  <!-- Content injected dynamically -->
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     TOAST CONTAINER
+     ══════════════════════════════════════════════════════════ -->
+<div id="toast-container" aria-live="polite" aria-atomic="false"></div>
+
+<!-- ══════════════════════════════════════════════════════════
+     JavaScript — ES Modules
+     ══════════════════════════════════════════════════════════ -->
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
+
+<script>
+  // Initialize Lucide icons on initial DOM load (before ES modules boot)
+  document.addEventListener('DOMContentLoaded', function () {
+    if (window.lucide) lucide.createIcons();
+  });
+</script>
+
 </body>
 </html>
