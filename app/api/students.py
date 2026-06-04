@@ -55,15 +55,25 @@ def list_students():
         return err
 
     db = get_db()
-    students = db.execute(
-        "SELECT * FROM students WHERE is_active=1 ORDER BY full_name"
-    ).fetchall()
-
-    result = []
-    for s in students:
-        result.append(_student_summary(db, s))
-
-    return jsonify(result), 200
+    rows = db.execute("""
+        SELECT s.*, fg.group_name, fg.monthly_fee as group_fee,
+            (SELECT COUNT(*) FROM payments p
+             WHERE p.student_id=s.id AND p.is_paid=0
+               AND p.due_date < date('now','localtime')) as overdue_count,
+            (SELECT COALESCE(SUM(amount),0) FROM payments p
+             WHERE p.student_id=s.id AND p.is_paid=0) as total_owed,
+            (SELECT COALESCE(SUM(amount),0) FROM payments p
+             WHERE p.student_id=s.id AND p.is_paid=1) as total_paid,
+            (SELECT COUNT(*) FROM payments p
+             WHERE p.student_id=s.id AND p.is_paid=1) as paid_count,
+            (SELECT COALESCE(SUM(CASE WHEN payment_method='cash' THEN amount ELSE 0 END),0)
+             FROM payments p WHERE p.student_id=s.id AND p.is_paid=1) as cash_paid,
+            (SELECT COALESCE(SUM(CASE WHEN payment_method='transfer' THEN amount ELSE 0 END),0)
+             FROM payments p WHERE p.student_id=s.id AND p.is_paid=1) as transfer_paid
+        FROM students s LEFT JOIN family_groups fg ON s.family_group_id=fg.id
+        WHERE s.is_active=1 ORDER BY s.full_name
+    """).fetchall()
+    return jsonify([dict(r) for r in rows]), 200
 
 
 # ---------------------------------------------------------------------------
@@ -244,10 +254,10 @@ def archived_student_payments(sid):
         return jsonify({"error": "Student not found"}), 404
 
     payments = db.execute(
-        "SELECT * FROM payments WHERE student_id=? ORDER BY due_date",
+        "SELECT * FROM payments WHERE student_id=? ORDER BY due_date DESC",
         (sid,),
     ).fetchall()
-    return jsonify({"student": dict(student), "payments": [dict(p) for p in payments]}), 200
+    return jsonify([dict(p) for p in payments]), 200
 
 
 # ---------------------------------------------------------------------------
@@ -261,26 +271,23 @@ def check_duplicate():
 
     name = (request.args.get("name") or "").strip().lower()
     if not name:
-        return jsonify({"duplicates": []}), 200
+        return jsonify([]), 200
 
     db = get_db()
     students = db.execute(
         "SELECT id, full_name, class FROM students WHERE is_active=1"
     ).fetchall()
 
+    name_words = set(name.split())
     matches = []
     for s in students:
         sname = s["full_name"].lower()
-        # Simple fuzzy: check if query is substring or shares words
-        if name in sname or sname in name:
+        existing_words = set(sname.split())
+        shared = name_words & existing_words
+        if len(shared) >= 2 or sname == name:
             matches.append(dict(s))
-        else:
-            query_words = set(name.split())
-            student_words = set(sname.split())
-            if query_words & student_words:
-                matches.append(dict(s))
 
-    return jsonify({"duplicates": matches}), 200
+    return jsonify(matches), 200
 
 
 # ---------------------------------------------------------------------------
@@ -299,10 +306,10 @@ def student_payments(sid):
 
     ensure_all_records(sid, db=db)
     payments = db.execute(
-        "SELECT * FROM payments WHERE student_id=? ORDER BY due_date",
+        "SELECT * FROM payments WHERE student_id=? ORDER BY due_date DESC",
         (sid,),
     ).fetchall()
-    return jsonify({"student": dict(student), "payments": [dict(p) for p in payments]}), 200
+    return jsonify([dict(p) for p in payments]), 200
 
 
 # ---------------------------------------------------------------------------

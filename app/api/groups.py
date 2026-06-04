@@ -56,12 +56,23 @@ def list_groups():
         return err
 
     db = get_db()
-    groups = db.execute(
-        "SELECT * FROM family_groups WHERE is_active=1 ORDER BY group_name"
-    ).fetchall()
-
-    result = [_group_summary(db, g) for g in groups]
-    return jsonify(result), 200
+    rows = db.execute("""
+        SELECT fg.*,
+            COUNT(s.id) as member_count,
+            (SELECT COUNT(*) FROM group_payments gp
+             WHERE gp.group_id=fg.id AND gp.is_paid=0
+               AND gp.due_date < date('now','localtime')) as overdue_count,
+            (SELECT COALESCE(SUM(amount),0) FROM group_payments gp
+             WHERE gp.group_id=fg.id AND gp.is_paid=1) as total_paid,
+            (SELECT COALESCE(SUM(amount),0) FROM group_payments gp
+             WHERE gp.group_id=fg.id AND gp.is_paid=0) as total_owed,
+            (SELECT COUNT(*) FROM group_payments gp
+             WHERE gp.group_id=fg.id AND gp.is_paid=1) as paid_count
+        FROM family_groups fg
+        LEFT JOIN students s ON s.family_group_id=fg.id AND s.is_active=1
+        WHERE fg.is_active=1 GROUP BY fg.id ORDER BY fg.group_name
+    """).fetchall()
+    return jsonify([dict(r) for r in rows]), 200
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +212,7 @@ def group_payments(gid):
         "SELECT * FROM group_payments WHERE group_id=? ORDER BY due_date",
         (gid,),
     ).fetchall()
-    return jsonify({"group": dict(group), "payments": [dict(p) for p in payments]}), 200
+    return jsonify([dict(p) for p in payments]), 200
 
 
 # ---------------------------------------------------------------------------

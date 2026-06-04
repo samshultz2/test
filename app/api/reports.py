@@ -399,10 +399,16 @@ def stats():
         "FROM family_groups fg WHERE fg.is_active=1 ORDER BY fg.group_name"
     ).fetchall()
 
-    return jsonify({
-        "students": [dict(s) for s in students],
-        "groups": [dict(g) for g in groups],
-    }), 200
+    result = []
+    for s in students:
+        d = dict(s)
+        d["type"] = "individual"
+        result.append(d)
+    for g in groups:
+        d = dict(g)
+        d["type"] = "group"
+        result.append(d)
+    return jsonify(result), 200
 
 
 # ---------------------------------------------------------------------------

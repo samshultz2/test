@@ -1,6 +1,6 @@
 /**
  * LessonPay — api.js
- * API client with CSRF token management and auth handling.
+ * API client with CSRF token management and 401/auth handling.
  */
 
 export class ApiClient {
@@ -29,7 +29,6 @@ export class ApiClient {
       throw new Error('Network error — please check your connection');
     }
 
-    // Refresh CSRF token if server rotated it
     const newCsrf = res.headers.get('X-CSRF-Token');
     if (newCsrf) this.refreshCsrf(newCsrf);
 
@@ -43,9 +42,7 @@ export class ApiClient {
       try {
         const errBody = await res.json();
         errMsg = errBody.error || errBody.message || errMsg;
-      } catch (_) {
-        // ignore JSON parse error
-      }
+      } catch (_) {}
       throw new Error(errMsg);
     }
 
@@ -53,75 +50,78 @@ export class ApiClient {
     return res.json();
   }
 
-  get(url) { return this._fetch('GET', url); }
-  post(url, body) { return this._fetch('POST', url, body); }
-  put(url, body) { return this._fetch('PUT', url, body); }
-  delete(url) { return this._fetch('DELETE', url); }
+  get(url)          { return this._fetch('GET', url); }
+  post(url, body)   { return this._fetch('POST', url, body); }
+  put(url, body)    { return this._fetch('PUT', url, body); }
+  delete(url)       { return this._fetch('DELETE', url); }
 
-  // ── Domain methods ──────────────────────────────────────────
+  // ── Auth ────────────────────────────────────────────────────────
+  authStatus()                  { return this.get('/auth/status'); }
+  login(credential, type)       { return this.post('/auth/login', { credential, type }); }
+  logout()                      { return this.post('/auth/logout', {}); }
+  changePassword(data)          { return this.post('/auth/change-password', data); }
+  changePin(data)               { return this.post('/auth/change-pin', data); }
+  getCsrfToken()                { return this.get('/auth/csrf-token'); }
 
-  // Auth
-  authStatus() { return this.get('/auth/status'); }
-  login(credential, type) { return this.post('/auth/login', { credential, type }); }
-  logout() { return this.post('/auth/logout', {}); }
-  changePassword(data) { return this.post('/auth/change-password', data); }
-  changePin(data) { return this.post('/auth/change-pin', data); }
+  // ── Dashboard ───────────────────────────────────────────────────
+  getDashboard()                { return this.get('/api/dashboard'); }
 
-  // Dashboard
-  getDashboard(month) { return this.get(`/api/dashboard?month=${month || ''}`); }
+  // ── Students ────────────────────────────────────────────────────
+  getStudents()                 { return this.get('/api/students'); }
+  createStudent(data)           { return this.post('/api/students', data); }
+  updateStudent(id, data)       { return this.put(`/api/students/${id}`, data); }
+  archiveStudent(id)            { return this.delete(`/api/students/${id}`); }
+  restoreStudent(id)            { return this.post(`/api/students/${id}/restore`, {}); }
+  getArchivedStudents()         { return this.get('/api/students/archived'); }
+  getStudentPayments(id)        { return this.get(`/api/students/${id}/payments`); }
+  getStudentPaymentsArchived(id){ return this.get(`/api/students/${id}/payments/archived`); }
+  getStudentLog(id)             { return this.get(`/api/students/${id}/log`); }
+  getStudentSchedule(id)        { return this.get(`/api/students/${id}/schedule`); }
+  saveStudentSchedule(id, slots){ return this.post(`/api/students/${id}/schedule`, slots); }
+  getStudentAttendance(id)      { return this.get(`/api/students/${id}/attendance`); }
+  holdStudent(id)               { return this.post(`/api/students/${id}/hold`, {}); }
+  checkDuplicateStudent(name)   { return this.get(`/api/students/check_duplicate?name=${encodeURIComponent(name)}`); }
 
-  // Students
-  getStudents() { return this.get('/api/students'); }
-  getStudent(id) { return this.get(`/api/students/${id}`); }
-  createStudent(data) { return this.post('/api/students', data); }
-  updateStudent(id, data) { return this.put(`/api/students/${id}`, data); }
-  archiveStudent(id) { return this.delete(`/api/students/${id}`); }
-  restoreStudent(id) { return this.post(`/api/students/${id}/restore`, {}); }
-  getArchive() { return this.get('/api/students/archive'); }
-  getStudentPayments(id) { return this.get(`/api/students/${id}/payments`); }
+  // ── Payments ────────────────────────────────────────────────────
+  addPaymentRecord(data)        { return this.post('/api/payments', data); }
+  deletePayment(id)             { return this.delete(`/api/payments/${id}`); }
+  markPaid(id, data)            { return this.post(`/api/payments/${id}/mark_paid`, data); }
+  unmarkPaid(id)                { return this.post(`/api/payments/${id}/unmark`, {}); }
+  bulkMarkPaid(data)            { return this.post('/api/payments/bulk_paid', data); }
+  checkDuplicatePayment(data)   { return this.post('/api/payments/check_duplicate', data); }
 
-  // Payments
-  getPayments(params = {}) {
-    const qs = new URLSearchParams(params).toString();
-    return this.get(`/api/payments${qs ? '?' + qs : ''}`);
-  }
-  markPaid(id, data) { return this.post(`/api/payments/${id}/pay`, data); }
-  undoPayment(id) { return this.post(`/api/payments/${id}/undo`, {}); }
-  deletePayment(id) { return this.delete(`/api/payments/${id}`); }
-  bulkPay(ids, data) { return this.post('/api/payments/bulk-pay', { ids, ...data }); }
+  // ── Groups ──────────────────────────────────────────────────────
+  getGroups()                   { return this.get('/api/groups'); }
+  createGroup(data)             { return this.post('/api/groups', data); }
+  updateGroup(id, data)         { return this.put(`/api/groups/${id}`, data); }
+  archiveGroup(id)              { return this.delete(`/api/groups/${id}`); }
+  holdGroup(id)                 { return this.post(`/api/groups/${id}/hold`, {}); }
+  getGroupPayments(id)          { return this.get(`/api/groups/${id}/payments`); }
+  addGroupPaymentRecord(data)   { return this.post('/api/group_payments', data); }
+  deleteGroupPayment(id)        { return this.delete(`/api/group_payments/${id}`); }
+  markGroupPaid(id, data)       { return this.post(`/api/group_payments/${id}/mark_paid`, data); }
+  unmarkGroupPaid(id)           { return this.post(`/api/group_payments/${id}/unmark`, {}); }
 
-  // Groups
-  getGroups() { return this.get('/api/groups'); }
-  getGroup(id) { return this.get(`/api/groups/${id}`); }
-  createGroup(data) { return this.post('/api/groups', data); }
-  updateGroup(id, data) { return this.put(`/api/groups/${id}`, data); }
-  archiveGroup(id) { return this.delete(`/api/groups/${id}`); }
-  payGroup(id, data) { return this.post(`/api/groups/${id}/pay`, data); }
-  holdGroup(id) { return this.post(`/api/groups/${id}/hold`, {}); }
-  resumeGroup(id) { return this.post(`/api/groups/${id}/resume`, {}); }
+  // ── Reports & Stats ─────────────────────────────────────────────
+  getStats()                    { return this.get('/api/stats'); }
+  getMonthlyBreakdown()         { return this.get('/api/monthly_breakdown'); }
+  getBySubject()                { return this.get('/api/by_subject'); }
+  getActivityLog()              { return this.get('/api/activity_log'); }
 
-  // Reports
-  getReports(month) { return this.get(`/api/reports?month=${month || ''}`); }
-  getActivityLog() { return this.get('/api/reports/log'); }
-  exportCsv() { return this.get('/api/reports/export/csv'); }
-  getBackupStatus() { return this.get('/api/backup/status'); }
-  triggerBackup() { return this.post('/api/backup/trigger', {}); }
+  // ── System ──────────────────────────────────────────────────────
+  sync()                        { return this.post('/api/ensure_month', {}); }
+  exportCsv()                   { return '/api/export/csv'; }   // direct URL for download
+  getBackupStatus()             { return this.get('/api/backup/auto_status'); }
+  downloadBackup()              { return '/api/backup'; }        // direct URL for download
 
-  // Attendance
-  getAttendance(date) { return this.get(`/api/attendance?date=${date}`); }
-  saveAttendance(date, records) { return this.post('/api/attendance', { date, records }); }
+  // ── Timetable ───────────────────────────────────────────────────
+  getTimetable()                { return this.get('/api/timetable'); }
 
-  // Timetable
-  getTimetable() { return this.get('/api/timetable'); }
-  createTimetableSlot(data) { return this.post('/api/timetable', data); }
-  deleteTimetableSlot(id) { return this.delete(`/api/timetable/${id}`); }
-
-  // Student hold/resume
-  holdStudent(id) { return this.post(`/api/students/${id}/hold`, {}); }
-  resumeStudent(id) { return this.post(`/api/students/${id}/resume`, {}); }
-
-  // Sync
-  sync() { return this.post('/api/sync', {}); }
+  // ── Attendance ──────────────────────────────────────────────────
+  getAttendanceByDate(dateStr)  { return this.get(`/api/attendance/${dateStr}`); }
+  getAttendanceSummary(dateStr) { return this.get(`/api/attendance/summary/${dateStr}`); }
+  saveAttendance(data)          { return this.post('/api/attendance', data); }
+  bulkSaveAttendance(data)      { return this.post('/api/attendance/bulk', data); }
 }
 
 export const api = new ApiClient();
