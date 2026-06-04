@@ -368,7 +368,7 @@ export class ReportsModule {
               return `
                 <div class="log-item">
                   <div class="log-dot ${color}"></div>
-                  <div class="log-text">${escHtml((l.entity_name ? l.entity_name + ': ' : '') + (l.action || '') + (l.details ? ' — ' + l.details : ''))}</div>
+                  <div class="log-text">${escHtml((l.entity_name ? l.entity_name + ': ' : '') + (l.action || '') + (l.detail ? ' — ' + l.detail : ''))}</div>
                   <div class="log-time">${fmtDate(l.created_at)}</div>
                 </div>
               `;
