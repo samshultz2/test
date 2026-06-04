@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Receipt – {{ entity.name if entity else 'Payment' }}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      font-size: 14px;
+      color: #1a1a2e;
+      background: #f0f4f8;
+      padding: 2rem;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+    }
+
+    .receipt {
+      width: 420px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.12);
+      overflow: hidden;
+    }
+
+    /* ── Header ─────────────────────────────── */
+    .receipt-header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%);
+      color: #fff;
+      padding: 2rem 2rem 1.5rem;
+      text-align: center;
+    }
+
+    .receipt-header .brand {
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .receipt-header .subtitle {
+      font-size: 0.72rem;
+      opacity: 0.65;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    .receipt-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 1.2rem;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 20px;
+      padding: 6px 18px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .check-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      background: #22c55e;
+      border-radius: 50%;
+      font-size: 0.65rem;
+      font-weight: 700;
+    }
+
+    /* ── Divider ─────────────────────────────── */
+    .tear-line {
+      position: relative;
+      height: 0;
+      border-top: 2px dashed #e2e8f0;
+      margin: 0;
+    }
+
+    .tear-line::before,
+    .tear-line::after {
+      content: '';
+      position: absolute;
+      top: -10px;
+      width: 20px;
+      height: 20px;
+      background: #f0f4f8;
+      border-radius: 50%;
+    }
+
+    .tear-line::before { left: -10px; }
+    .tear-line::after { right: -10px; }
+
+    /* ── Body ────────────────────────────────── */
+    .receipt-body { padding: 1.5rem 2rem; }
+
+    .receipt-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 0.6rem 0;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 0.88rem;
+    }
+
+    .receipt-row:last-child { border-bottom: none; }
+
+    .receipt-row .key {
+      color: #64748b;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .receipt-row .val {
+      text-align: right;
+      font-weight: 600;
+      color: #1e293b;
+      max-width: 60%;
+      word-break: break-word;
+    }
+
+    /* ── Amount Highlight ─────────────────────── */
+    .amount-section {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 10px;
+      padding: 1.2rem 1.5rem;
+      margin: 1rem 0;
+      text-align: center;
+    }
+
+    .amount-section .amount-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #16a34a;
+      margin-bottom: 4px;
+    }
+
+    .amount-section .amount-value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #15803d;
+    }
+
+    .amount-section .method-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 6px;
+      background: #dcfce7;
+      color: #15803d;
+      border-radius: 12px;
+      padding: 3px 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    /* ── Note ────────────────────────────────── */
+    .receipt-note {
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: 8px;
+      padding: 0.8rem 1rem;
+      font-size: 0.82rem;
+      color: #92400e;
+      margin-top: 0.5rem;
+    }
+
+    .receipt-note .note-label {
+      font-weight: 700;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    /* ── Footer ──────────────────────────────── */
+    .receipt-footer {
+      text-align: center;
+      padding: 1.2rem;
+      background: #f8fafc;
+      border-top: 1px solid #e2e8f0;
+      color: #94a3b8;
+      font-size: 0.7rem;
+    }
+
+    .receipt-id {
+      font-family: monospace;
+      font-size: 0.7rem;
+      color: #94a3b8;
+      text-align: center;
+      padding: 0.5rem;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Print ───────────────────────────────── */
+    .no-print-btn {
+      text-align: center;
+      padding: 1rem;
+    }
+
+    @media print {
+      body { background: #fff; padding: 0; display: block; }
+      .receipt { box-shadow: none; width: 100%; border-radius: 0; }
+      .tear-line::before, .tear-line::after { background: #fff; }
+      .no-print-btn { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="receipt">
+
+    <!-- Header -->
+    <div class="receipt-header">
+      <div class="brand">LessonPay</div>
+      <div class="subtitle">Payment Receipt</div>
+      {% if payment.is_paid %}
+        <div class="receipt-badge">
+          <span class="check-icon">&#10003;</span>
+          Payment Confirmed
+        </div>
+      {% else %}
+        <div class="receipt-badge" style="background:rgba(239,68,68,0.2);border-color:rgba(239,68,68,0.4);">
+          &#10007; Unpaid
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- Tear Line -->
+    <div class="tear-line"></div>
+
+    <!-- Body -->
+    <div class="receipt-body">
+
+      <!-- Amount -->
+      {% if payment.is_paid %}
+        <div class="amount-section">
+          <div class="amount-label">Amount Received</div>
+          <div class="amount-value">₦{{ "%.2f"|format(payment.amount|float) }}</div>
+          {% if payment.payment_method %}
+            <div class="method-badge">
+              {{ payment.payment_method|capitalize }}
+            </div>
+          {% endif %}
+        </div>
+      {% else %}
+        <div class="amount-section" style="background:#fef2f2;border-color:#fecaca;">
+          <div class="amount-label" style="color:#dc2626;">Amount Due</div>
+          <div class="amount-value" style="color:#b91c1c;">₦{{ "%.2f"|format(payment.amount|float) }}</div>
+        </div>
+      {% endif %}
+
+      <!-- Payer / Student Details -->
+      {% if entity %}
+        <div class="receipt-row">
+          <span class="key">{{ 'Group' if ptype == 'group' else 'Student' }}</span>
+          <span class="val">{{ entity.name }}</span>
+        </div>
+        {% if entity.get('class') %}
+          <div class="receipt-row">
+            <span class="key">Class</span>
+            <span class="val">{{ entity.class }}</span>
+          </div>
+        {% endif %}
+        {% if entity.get('subject') %}
+          <div class="receipt-row">
+            <span class="key">Subject</span>
+            <span class="val">{{ entity.subject }}</span>
+          </div>
+        {% endif %}
+        {% if entity.contact_name %}
+          <div class="receipt-row">
+            <span class="key">Contact</span>
+            <span class="val">{{ entity.contact_name }}</span>
+          </div>
+        {% endif %}
+      {% endif %}
+
+      <!-- Payment Details -->
+      <div class="receipt-row">
+        <span class="key">Period</span>
+        <span class="val">{{ payment.payment_month }}</span>
+      </div>
+
+      <div class="receipt-row">
+        <span class="key">Due Date</span>
+        <span class="val">{{ payment.due_date }}</span>
+      </div>
+
+      {% if payment.is_paid %}
+        <div class="receipt-row">
+          <span class="key">Paid Date</span>
+          <span class="val">{{ payment.paid_date or '—' }}</span>
+        </div>
+
+        {% if payment.paid_by %}
+          <div class="receipt-row">
+            <span class="key">Paid By</span>
+            <span class="val">{{ payment.paid_by }}</span>
+          </div>
+        {% endif %}
+
+        {% if payment.payer_type %}
+          <div class="receipt-row">
+            <span class="key">Payer Type</span>
+            <span class="val">{{ payment.payer_type|capitalize }}</span>
+          </div>
+        {% endif %}
+      {% endif %}
+
+      <div class="receipt-row">
+        <span class="key">Receipt ID</span>
+        <span class="val" style="font-family:monospace;font-size:0.8rem;">
+          {{ ptype[0]|upper }}{{ pid }}
+        </span>
+      </div>
+
+      <!-- Notes -->
+      {% if payment.receipt_note %}
+        <div class="receipt-note">
+          <div class="note-label">Note</div>
+          {{ payment.receipt_note }}
+        </div>
+      {% endif %}
+
+    </div><!-- /body -->
+
+    <!-- Tear Line -->
+    <div class="tear-line"></div>
+
+    <!-- Footer -->
+    <div class="receipt-footer">
+      Thank you for your payment &mdash; LessonPay
+    </div>
+
+    <!-- Print Button -->
+    <div class="no-print-btn">
+      <button onclick="window.print()"
+        style="background:#1e293b;color:#fff;border:none;padding:9px 24px;border-radius:8px;font-size:0.85rem;cursor:pointer;">
+        Print Receipt
+      </button>
+    </div>
+
+  </div><!-- /receipt -->
+</body>
+</html>

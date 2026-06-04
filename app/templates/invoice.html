@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Invoice – {{ data.entity_name }}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      font-size: 14px;
+      color: #1a1a2e;
+      background: #f0f4f8;
+      padding: 2rem;
+    }
+
+    .page {
+      max-width: 780px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+      overflow: hidden;
+    }
+
+    /* ── Header ─────────────────────────────── */
+    .header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%);
+      color: #fff;
+      padding: 2.5rem 2.5rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .brand h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .brand p {
+      font-size: 0.8rem;
+      opacity: 0.7;
+      margin-top: 4px;
+    }
+
+    .invoice-meta {
+      text-align: right;
+    }
+
+    .invoice-meta .badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 20px;
+      padding: 4px 14px;
+      font-size: 0.75rem;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .invoice-meta h2 {
+      font-size: 1.5rem;
+      font-weight: 300;
+    }
+
+    .invoice-meta small {
+      display: block;
+      font-size: 0.75rem;
+      opacity: 0.65;
+      margin-top: 4px;
+    }
+
+    /* ── Body ────────────────────────────────── */
+    .body { padding: 2rem 2.5rem; }
+
+    /* ── Info Grid ───────────────────────────── */
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .info-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 1.2rem 1.5rem;
+    }
+
+    .info-card .label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #64748b;
+      margin-bottom: 6px;
+    }
+
+    .info-card .value {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #1e293b;
+    }
+
+    .info-card .sub {
+      font-size: 0.8rem;
+      color: #64748b;
+      margin-top: 2px;
+    }
+
+    /* ── Members (group only) ─────────────────── */
+    .members-section {
+      margin-bottom: 2rem;
+    }
+
+    .section-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #64748b;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #e2e8f0;
+    }
+
+    .members-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .member-chip {
+      background: #e0f2fe;
+      color: #0369a1;
+      border-radius: 20px;
+      padding: 4px 14px;
+      font-size: 0.82rem;
+      font-weight: 500;
+    }
+
+    /* ── Table ───────────────────────────────── */
+    .table-section { margin-bottom: 2rem; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead tr {
+      background: #1e293b;
+      color: #fff;
+    }
+
+    thead th {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      font-weight: 500;
+    }
+
+    thead th:last-child { text-align: right; }
+
+    tbody tr {
+      border-bottom: 1px solid #f1f5f9;
+      transition: background 0.15s;
+    }
+
+    tbody tr:hover { background: #f8fafc; }
+
+    tbody td {
+      padding: 0.75rem 1rem;
+      font-size: 0.88rem;
+    }
+
+    tbody td:last-child { text-align: right; }
+
+    .status-paid {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: #16a34a;
+      font-weight: 600;
+      font-size: 0.8rem;
+    }
+
+    .status-unpaid {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: #dc2626;
+      font-weight: 600;
+      font-size: 0.8rem;
+    }
+
+    /* ── Summary ─────────────────────────────── */
+    .summary {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 2rem;
+    }
+
+    .summary-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 1.5rem 2rem;
+      min-width: 280px;
+    }
+
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.88rem;
+      padding: 6px 0;
+      color: #475569;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    .summary-row:last-child { border-bottom: none; }
+
+    .summary-row.total {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #1e293b;
+      margin-top: 6px;
+      padding-top: 10px;
+      border-top: 2px solid #1e293b;
+    }
+
+    .summary-row .due-amount {
+      color: #dc2626;
+      font-weight: 700;
+    }
+
+    /* ── Footer ──────────────────────────────── */
+    .footer {
+      text-align: center;
+      padding: 1.5rem;
+      background: #f8fafc;
+      border-top: 1px solid #e2e8f0;
+      color: #94a3b8;
+      font-size: 0.75rem;
+    }
+
+    /* ── Print ───────────────────────────────── */
+    @media print {
+      body { background: #fff; padding: 0; }
+      .page { box-shadow: none; border-radius: 0; }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+
+    <!-- Header -->
+    <div class="header">
+      <div class="brand">
+        <h1>LessonPay</h1>
+        <p>Private Tuition Payment Tracker</p>
+      </div>
+      <div class="invoice-meta">
+        <div class="badge">Invoice</div>
+        <h2>{{ data.entity_name }}</h2>
+        <small>Generated: {{ now if now else '' }}</small>
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div class="body">
+
+      <!-- Info Grid -->
+      <div class="info-grid">
+        <div class="info-card">
+          <div class="label">Billed To</div>
+          <div class="value">{{ data.entity_name }}</div>
+          {% if data.contact_name %}
+            <div class="sub">{{ data.contact_name }}</div>
+          {% endif %}
+          {% if data.contact_phone %}
+            <div class="sub">{{ data.contact_phone }}</div>
+          {% endif %}
+        </div>
+
+        <div class="info-card">
+          <div class="label">Details</div>
+          {% if data.entity_type == 'individual' %}
+            <div class="value">{{ data.get('class', '') }}</div>
+            {% if data.subject %}
+              <div class="sub">Subject: {{ data.subject }}</div>
+            {% endif %}
+          {% endif %}
+          <div class="sub">Monthly Fee: ₦{{ "%.2f"|format(data.monthly_fee|float) }}</div>
+          <div class="sub">Type: {{ 'Family Group' if ptype == 'group' else 'Individual Student' }}</div>
+        </div>
+      </div>
+
+      <!-- Group Members -->
+      {% if ptype == 'group' and students %}
+        <div class="members-section">
+          <div class="section-title">Group Members</div>
+          <div class="members-list">
+            {% for m in students %}
+              <span class="member-chip">{{ m.full_name }}{% if m.class %} · {{ m.class }}{% endif %}</span>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+
+      <!-- Payments Table -->
+      <div class="table-section">
+        <div class="section-title">Payment Schedule</div>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Period</th>
+              <th>Due Date</th>
+              <th>Status</th>
+              <th>Paid Date</th>
+              <th>Method</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in payments %}
+              <tr>
+                <td style="color:#94a3b8;">{{ loop.index }}</td>
+                <td>{{ p.payment_month }}</td>
+                <td>{{ p.due_date }}</td>
+                <td>
+                  {% if p.is_paid %}
+                    <span class="status-paid">&#10003; Paid</span>
+                  {% else %}
+                    <span class="status-unpaid">&#10007; Unpaid</span>
+                  {% endif %}
+                </td>
+                <td>{{ p.paid_date or '—' }}</td>
+                <td>{{ (p.payment_method or '—')|capitalize }}</td>
+                <td>₦{{ "%.2f"|format(p.amount|float) }}</td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="7" style="text-align:center;padding:2rem;color:#94a3b8;">
+                  No payment records found.
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Summary -->
+      <div class="summary">
+        <div class="summary-box">
+          <div class="summary-row">
+            <span>Total Records</span>
+            <span>{{ payments|length }}</span>
+          </div>
+          <div class="summary-row">
+            <span>Paid</span>
+            <span style="color:#16a34a;">{{ payments|selectattr('is_paid')|list|length }}</span>
+          </div>
+          <div class="summary-row">
+            <span>Unpaid</span>
+            <span style="color:#dc2626;">{{ unpaid|length }}</span>
+          </div>
+          <div class="summary-row total">
+            <span>Balance Due</span>
+            <span class="due-amount">₦{{ "%.2f"|format(total_due|float) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Print Button -->
+      <div class="no-print" style="text-align:center;margin-bottom:1rem;">
+        <button onclick="window.print()"
+          style="background:#1e293b;color:#fff;border:none;padding:10px 28px;border-radius:8px;font-size:0.9rem;cursor:pointer;">
+          Print Invoice
+        </button>
+      </div>
+
+    </div><!-- /body -->
+
+    <!-- Footer -->
+    <div class="footer">
+      This invoice was automatically generated by LessonPay &mdash; Private Tuition Management System.
+    </div>
+
+  </div><!-- /page -->
+</body>
+</html>
