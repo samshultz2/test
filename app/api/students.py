@@ -327,11 +327,29 @@ def student_payments(sid):
         return jsonify({"error": "Student not found"}), 404
 
     ensure_all_records(sid, db=db)
+    from datetime import date as _date
+    today_str = _date.today().isoformat()
     payments = db.execute(
         "SELECT * FROM payments WHERE student_id=? ORDER BY due_date DESC",
         (sid,),
     ).fetchall()
-    return jsonify([dict(p) for p in payments]), 200
+    result = []
+    for p in payments:
+        d = dict(p)
+        d['month'] = d.get('payment_month', '')
+        d['paid_at'] = d.get('paid_date')
+        d['method'] = d.get('payment_method')
+        d['payer_name'] = d.get('paid_by')
+        d['reference'] = d.get('receipt_note')
+        d['is_group'] = False
+        if d.get('is_paid'):
+            d['status'] = 'paid'
+        elif d.get('due_date') and d['due_date'] < today_str:
+            d['status'] = 'overdue'
+        else:
+            d['status'] = 'unpaid'
+        result.append(d)
+    return jsonify(result), 200
 
 
 # ---------------------------------------------------------------------------

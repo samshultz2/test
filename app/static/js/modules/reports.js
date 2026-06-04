@@ -549,18 +549,24 @@ export class ReportsModule {
         <div class="drawer-title"><i data-lucide="key"></i> Change PIN</div>
         <button class="icon-btn" onclick="window.app.closeDrawer()"><i data-lucide="x"></i></button>
       </div>
-      <div class="drawer-body" style="text-align:center">
-        <div id="pin-change-title" class="text-muted mb-3" style="font-size:14px">Enter new 4-digit PIN</div>
-        <div class="pin-display" id="pin-change-dots">
-          ${Array(4).fill('<div class="pin-dot"></div>').join('')}
+      <div class="drawer-body">
+        <div class="form-group mb-3">
+          <label class="form-label">Current Password</label>
+          <input class="form-input" id="pin-current-password" type="password" placeholder="Enter your current password">
         </div>
-        <div id="pin-change-error" class="text-red text-xs mb-3" style="min-height:16px"></div>
-        <div class="pin-pad">
-          ${[1,2,3,4,5,6,7,8,9,'clear',0,'enter'].map(k => {
-            const val = k === 'clear' ? 'clear' : k === 'enter' ? 'enter' : String(k);
-            const cls = k === 'clear' ? 'clear' : k === 'enter' ? 'enter' : '';
-            return `<button class="pin-key ${cls}" data-pval="${val}">${k === 'clear' ? '⌫' : k === 'enter' ? '→' : k}</button>`;
-          }).join('')}
+        <div style="text-align:center">
+          <div id="pin-change-title" class="text-muted mb-3" style="font-size:14px">Enter new 4-digit PIN</div>
+          <div class="pin-display" id="pin-change-dots">
+            ${Array(4).fill('<div class="pin-dot"></div>').join('')}
+          </div>
+          <div id="pin-change-error" class="text-red text-xs mb-3" style="min-height:16px"></div>
+          <div class="pin-pad">
+            ${[1,2,3,4,5,6,7,8,9,'clear',0,'enter'].map(k => {
+              const val = k === 'clear' ? 'clear' : k === 'enter' ? 'enter' : String(k);
+              const cls = k === 'clear' ? 'clear' : k === 'enter' ? 'enter' : '';
+              return `<button class="pin-key ${cls}" data-pval="${val}">${k === 'clear' ? '⌫' : k === 'enter' ? '→' : k}</button>`;
+            }).join('')}
+          </div>
         </div>
       </div>
     `);
@@ -593,8 +599,13 @@ export class ReportsModule {
               const title = document.getElementById('pin-change-title');
               if (title) title.textContent = 'Enter new 4-digit PIN';
             } else {
+              const currentPassword = document.getElementById('pin-current-password')?.value || '';
+              if (!currentPassword) {
+                if (errEl) errEl.textContent = 'Please enter your current password above.';
+                return;
+              }
               try {
-                await this.api.changePin({ new_pin: newPin });
+                await this.api.changePin({ current_password: currentPassword, pin: newPin });
                 toast('PIN changed successfully', 'success');
                 window.app.closeDrawer();
               } catch (e) {
