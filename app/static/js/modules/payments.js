@@ -240,8 +240,9 @@ export class PaymentsModule {
 
   async undo(id) {
     if (!confirm('Undo this payment? It will be marked as unpaid.')) return;
+    const p = this.payments.find(x => x.id === id);
     try {
-      await this.api.undoPayment(id);
+      await this.api.undoPayment(id, p?.is_group || false);
       toast('Payment undone', 'info');
       await this.load();
     } catch (e) { toast(e.message, 'error'); }
@@ -341,7 +342,9 @@ export class PaymentsModule {
       const btn = document.getElementById('bulk-pay-confirm');
       if (btn) { btn.disabled = true; btn.textContent = 'Processing…'; }
       try {
-        await this.api.bulkPay(ids, {
+        const indIds = ids.filter(id => !this.payments.find(p => p.id === id)?.is_group);
+        const grpIds = ids.filter(id => !!this.payments.find(p => p.id === id)?.is_group);
+        await this.api.bulkPay(indIds, grpIds, {
           paid_at: document.getElementById('bulk-datetime')?.value,
           method: document.getElementById('bulk-method')?.value,
         });

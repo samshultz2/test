@@ -220,7 +220,49 @@ def auto_backup_status():
             "created": datetime.fromtimestamp(stat.st_mtime).isoformat(),
         })
 
-    return jsonify({"backups": result, "count": len(result)}), 200
+    last_backup = result[0]["created"] if result else None
+    return jsonify({"backups": result, "count": len(result), "last_backup": last_backup}), 200
+
+
+# ---------------------------------------------------------------------------
+# POST /api/backup/trigger  — create a manual backup now
+# ---------------------------------------------------------------------------
+@system_bp.route("/api/backup/trigger", methods=["POST"])
+def trigger_backup():
+    err = _require_auth()
+    if err:
+        return err
+
+    db = get_db()
+    tables = [
+        "family_groups", "students", "payments", "group_payments",
+        "activity_log", "lesson_schedule", "attendance", "app_settings",
+    ]
+    data = {}
+    for table in tables:
+        rows = db.execute(f"SELECT * FROM {table}").fetchall()
+        data[table] = [dict(r) for r in rows]
+
+    data["_meta"] = {"exported_at": datetime.now().isoformat(), "version": "1.0"}
+
+    backup_dir = _get_backup_dir()
+    os.makedirs(backup_dir, exist_ok=True)
+    now = datetime.now()
+    filename = f"backup_{now.strftime('%Y%m%d_%H%M%S')}.json"
+    filepath = os.path.join(backup_dir, filename)
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, default=str)
+
+    backups = sorted([
+        fn for fn in os.listdir(backup_dir)
+        if fn.startswith("backup_") and fn.endswith(".json")
+    ])
+    while len(backups) > 7:
+        os.remove(os.path.join(backup_dir, backups.pop(0)))
+
+    log_activity("system", 0, "system", "backup", f"Manual backup: {filename}", db=db)
+    return jsonify({"success": True, "filename": filename}), 200
 
 
 # ---------------------------------------------------------------------------

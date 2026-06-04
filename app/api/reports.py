@@ -664,3 +664,196 @@ def attendance_summary(att_date):
         "excused": excused,
         "unmarked": total - (present + absent + excused),
     }), 200
+
+
+# ---------------------------------------------------------------------------
+# GET /api/reports  — combined summary / monthly / subjects
+# ---------------------------------------------------------------------------
+@reports_bp.route("/api/reports", methods=["GET"])
+def reports_combined():
+    err = _require_auth()
+    if err:
+        return err
+
+    month = request.args.get("month", "") or date.today().strftime("%Y-%m")
+    today_dt = date.today()
+    db = get_db()
+
+    # ── Per-student stats ────────────────────────────────────────────────────
+    student_stats = {}
+    for row in db.execute(
+        "SELECT student_id, "
+        "SUM(CASE WHEN is_paid=1 THEN amount ELSE 0 END) as total_paid, "
+        "SUM(CASE WHEN is_paid=0 THEN amount ELSE 0 END) as total_owed, "
+        "COUNT(CASE WHEN is_paid=1 THEN 1 END) as months_paid, "
+        "COUNT(*) as months_total "
+        "FROM payments GROUP BY student_id"
+    ).fetchall():
+        student_stats[row["student_id"]] = dict(row)
+
+    current_paid_ind = set(
+        r["student_id"]
+        for r in db.execute(
+            "SELECT DISTINCT student_id FROM payments WHERE is_paid=1 AND payment_month=?",
+            (month,),
+        ).fetchall()
+    )
+
+    students = db.execute(
+        "SELECT id, full_name, class, subject FROM students WHERE is_active=1 ORDER BY full_name"
+    ).fetchall()
+
+    summary = []
+    for s in students:
+        sid = s["id"]
+        st = student_stats.get(sid, {"total_paid": 0, "total_owed": 0, "months_paid": 0, "months_total": 0})
+        paid_months_rows = db.execute(
+            "SELECT payment_month FROM payments WHERE student_id=? AND is_paid=1 ORDER BY payment_month DESC",
+            (sid,),
+        ).fetchall()
+        streak = 0
+        if paid_months_rows:
+            ml = [r["payment_month"] for r in paid_months_rows]
+            streak = 1
+            for i in range(1, len(ml)):
+                expected = (
+                    datetime.strptime(ml[i - 1], "%Y-%m").replace(day=1) - relativedelta(months=1)
+                ).strftime("%Y-%m")
+                if ml[i] == expected:
+                    streak += 1
+                else:
+                    break
+        mp = st["months_paid"] or 0
+        mt = st["months_total"] or 0
+        summary.append({
+            "name": s["full_name"],
+            "type": "individual",
+            "class_name": s["class"] or "",
+            "streak": streak,
+            "current_paid": sid in current_paid_ind,
+            "total_paid": st["total_paid"] or 0,
+            "total_owed": st["total_owed"] or 0,
+            "months_paid": mp,
+            "months_total": mt,
+            "rate": round(mp / mt * 100) if mt > 0 else 0,
+        })
+
+    # ── Per-group stats ──────────────────────────────────────────────────────
+    group_stats = {}
+    for row in db.execute(
+        "SELECT group_id, "
+        "SUM(CASE WHEN is_paid=1 THEN amount ELSE 0 END) as total_paid, "
+        "SUM(CASE WHEN is_paid=0 THEN amount ELSE 0 END) as total_owed, "
+        "COUNT(CASE WHEN is_paid=1 THEN 1 END) as months_paid, "
+        "COUNT(*) as months_total "
+        "FROM group_payments GROUP BY group_id"
+    ).fetchall():
+        group_stats[row["group_id"]] = dict(row)
+
+    current_paid_grp = set(
+        r["group_id"]
+        for r in db.execute(
+            "SELECT DISTINCT group_id FROM group_payments WHERE is_paid=1 AND payment_month=?",
+            (month,),
+        ).fetchall()
+    )
+
+    groups = db.execute(
+        "SELECT id, group_name FROM family_groups WHERE is_active=1 ORDER BY group_name"
+    ).fetchall()
+
+    for g in groups:
+        gid = g["id"]
+        st = group_stats.get(gid, {"total_paid": 0, "total_owed": 0, "months_paid": 0, "months_total": 0})
+        paid_months_rows = db.execute(
+            "SELECT payment_month FROM group_payments WHERE group_id=? AND is_paid=1 ORDER BY payment_month DESC",
+            (gid,),
+        ).fetchall()
+        streak = 0
+        if paid_months_rows:
+            ml = [r["payment_month"] for r in paid_months_rows]
+            streak = 1
+            for i in range(1, len(ml)):
+                expected = (
+                    datetime.strptime(ml[i - 1], "%Y-%m").replace(day=1) - relativedelta(months=1)
+                ).strftime("%Y-%m")
+                if ml[i] == expected:
+                    streak += 1
+                else:
+                    break
+        mp = st["months_paid"] or 0
+        mt = st["months_total"] or 0
+        summary.append({
+            "name": g["group_name"],
+            "type": "group",
+            "class_name": "",
+            "streak": streak,
+            "current_paid": gid in current_paid_grp,
+            "total_paid": st["total_paid"] or 0,
+            "total_owed": st["total_owed"] or 0,
+            "months_paid": mp,
+            "months_total": mt,
+            "rate": round(mp / mt * 100) if mt > 0 else 0,
+        })
+
+    # ── Monthly breakdown (last 12 months) ───────────────────────────────────
+    # Aggregate from DB using a single query per table then merge in Python
+    ind_monthly = {}
+    for r in db.execute(
+        "SELECT payment_month, "
+        "SUM(CASE WHEN payment_method='cash' THEN amount ELSE 0 END) as cash, "
+        "SUM(CASE WHEN payment_method='transfer' THEN amount ELSE 0 END) as xfer, "
+        "COUNT(*) as cnt, SUM(amount) as total "
+        "FROM payments WHERE is_paid=1 GROUP BY payment_month"
+    ).fetchall():
+        ind_monthly[r["payment_month"]] = dict(r)
+
+    grp_monthly = {}
+    for r in db.execute(
+        "SELECT payment_month, "
+        "SUM(CASE WHEN payment_method='cash' THEN amount ELSE 0 END) as cash, "
+        "SUM(CASE WHEN payment_method='transfer' THEN amount ELSE 0 END) as xfer, "
+        "COUNT(*) as cnt, SUM(amount) as total "
+        "FROM group_payments WHERE is_paid=1 GROUP BY payment_month"
+    ).fetchall():
+        grp_monthly[r["payment_month"]] = dict(r)
+
+    monthly = []
+    for i in range(11, -1, -1):
+        d = today_dt.replace(day=1) - relativedelta(months=i)
+        mo = d.strftime("%Y-%m")
+        im = ind_monthly.get(mo, {"cash": 0, "xfer": 0, "cnt": 0, "total": 0})
+        gm = grp_monthly.get(mo, {"cash": 0, "xfer": 0, "cnt": 0, "total": 0})
+        cash = (im["cash"] or 0) + (gm["cash"] or 0)
+        xfer = (im["xfer"] or 0) + (gm["xfer"] or 0)
+        monthly.append({
+            "month": mo,
+            "total": cash + xfer,
+            "cash": cash,
+            "transfer": xfer,
+            "count": (im["cnt"] or 0) + (gm["cnt"] or 0),
+        })
+
+    # ── By subject ────────────────────────────────────────────────────────────
+    subject_rows = db.execute(
+        "SELECT COALESCE(s.subject, 'Unknown') as subject, "
+        "COALESCE(SUM(CASE WHEN p.is_paid=1 THEN p.amount ELSE 0 END), 0) as amount, "
+        "COUNT(DISTINCT s.id) as student_count "
+        "FROM students s LEFT JOIN payments p ON p.student_id=s.id "
+        "WHERE s.is_active=1 GROUP BY COALESCE(s.subject, 'Unknown') ORDER BY amount DESC"
+    ).fetchall()
+
+    subjects = []
+    for sr in subject_rows:
+        d = dict(sr)
+        paid_count = db.execute(
+            "SELECT COUNT(DISTINCT p.student_id) FROM payments p "
+            "JOIN students s ON p.student_id=s.id "
+            "WHERE s.is_active=1 AND COALESCE(s.subject,'Unknown')=? "
+            "AND p.is_paid=1 AND p.payment_month=?",
+            (d["subject"], month),
+        ).fetchone()[0]
+        d["paid_count"] = paid_count
+        subjects.append(d)
+
+    return jsonify({"summary": summary, "monthly": monthly, "subjects": subjects}), 200

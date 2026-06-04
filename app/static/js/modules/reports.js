@@ -368,7 +368,7 @@ export class ReportsModule {
               return `
                 <div class="log-item">
                   <div class="log-dot ${color}"></div>
-                  <div class="log-text">${escHtml(l.description || l.action)}</div>
+                  <div class="log-text">${escHtml((l.entity_name ? l.entity_name + ': ' : '') + (l.action || '') + (l.details ? ' — ' + l.details : ''))}</div>
                   <div class="log-time">${fmtDate(l.created_at)}</div>
                 </div>
               `;
@@ -471,23 +471,15 @@ export class ReportsModule {
     document.getElementById('settings-logout')?.addEventListener('click', () => { window.app.lock(); });
   }
 
-  async _exportCsv() {
-    try {
-      toast('Preparing CSV…', 'info');
-      const data = await this.api.exportCsv();
-      // If backend returns a URL or data blob
-      if (data && data.url) {
-        window.open(data.url, '_blank');
-      } else if (data && data.csv) {
-        const blob = new Blob([data.csv], { type: 'text/csv' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `lessonpay-export-${new Date().toISOString().slice(0,10)}.csv`;
-        a.click();
-        URL.revokeObjectURL(a.href);
-      }
-      toast('CSV exported', 'success');
-    } catch (e) { toast(e.message, 'error'); }
+  _exportCsv() {
+    const url = this.api.exportCsv();
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `lessonpay-export-${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    toast('CSV download started', 'success');
   }
 
   async _triggerBackup() {

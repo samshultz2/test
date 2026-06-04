@@ -13,6 +13,74 @@ def _require_auth():
 
 
 # ---------------------------------------------------------------------------
+# GET /api/payments  — unified payments list
+# ---------------------------------------------------------------------------
+@payments_bp.route("/api/payments", methods=["GET"])
+def list_payments():
+    err = _require_auth()
+    if err:
+        return err
+
+    month = request.args.get("month", "")
+    today_str = date.today().isoformat()
+    db = get_db()
+
+    # Individual payments
+    ind_q = (
+        "SELECT p.id, s.full_name as name, s.class as class_name, "
+        "p.payment_month as month, p.amount, p.is_paid, p.due_date, "
+        "p.paid_date as paid_at, p.payment_method as method, "
+        "p.paid_by as payer_name, p.receipt_note as reference "
+        "FROM payments p JOIN students s ON p.student_id=s.id "
+        "WHERE s.is_active=1"
+    )
+    ind_params = []
+    if month:
+        ind_q += " AND p.payment_month=?"
+        ind_params.append(month)
+
+    # Group payments
+    grp_q = (
+        "SELECT gp.id, fg.group_name as name, '' as class_name, "
+        "gp.payment_month as month, gp.amount, gp.is_paid, gp.due_date, "
+        "gp.paid_date as paid_at, gp.payment_method as method, "
+        "gp.paid_by as payer_name, gp.receipt_note as reference "
+        "FROM group_payments gp JOIN family_groups fg ON gp.group_id=fg.id "
+        "WHERE fg.is_active=1"
+    )
+    grp_params = []
+    if month:
+        grp_q += " AND gp.payment_month=?"
+        grp_params.append(month)
+
+    result = []
+    for r in db.execute(ind_q, ind_params).fetchall():
+        d = dict(r)
+        d["is_group"] = False
+        if d["is_paid"]:
+            d["status"] = "paid"
+        elif d["due_date"] and d["due_date"] < today_str:
+            d["status"] = "overdue"
+        else:
+            d["status"] = "unpaid"
+        result.append(d)
+
+    for r in db.execute(grp_q, grp_params).fetchall():
+        d = dict(r)
+        d["is_group"] = True
+        if d["is_paid"]:
+            d["status"] = "paid"
+        elif d["due_date"] and d["due_date"] < today_str:
+            d["status"] = "overdue"
+        else:
+            d["status"] = "unpaid"
+        result.append(d)
+
+    result.sort(key=lambda x: (x["month"] or "", x["name"] or ""))
+    return jsonify(result), 200
+
+
+# ---------------------------------------------------------------------------
 # POST /api/payments  — add a payment record
 # ---------------------------------------------------------------------------
 @payments_bp.route("/api/payments", methods=["POST"])

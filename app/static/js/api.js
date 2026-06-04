@@ -89,6 +89,9 @@ export class ApiClient {
   unmarkPaid(id)                { return this.post(`/api/payments/${id}/unmark`, {}); }
   bulkMarkPaid(data)            { return this.post('/api/payments/bulk_paid', data); }
   checkDuplicatePayment(data)   { return this.post('/api/payments/check_duplicate', data); }
+  getPayments(params = {})    { const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([,v]) => v))).toString(); return this.get(`/api/payments${qs ? '?' + qs : ''}`); }
+  undoPayment(id, isGroup)    { return isGroup ? this.unmarkGroupPaid(id) : this.unmarkPaid(id); }
+  bulkPay(indIds, grpIds, d)  { return this.bulkMarkPaid({ pids: indIds, group_pids: grpIds, paid_date: d.paid_at, payment_method: d.method }); }
 
   // ── Groups ──────────────────────────────────────────────────────
   getGroups()                   { return this.get('/api/groups'); }
@@ -107,12 +110,14 @@ export class ApiClient {
   getMonthlyBreakdown()         { return this.get('/api/monthly_breakdown'); }
   getBySubject()                { return this.get('/api/by_subject'); }
   getActivityLog()              { return this.get('/api/activity_log'); }
+  getReports(month)            { return this.get(`/api/reports?month=${encodeURIComponent(month || '')}`); }
 
   // ── System ──────────────────────────────────────────────────────
   sync()                        { return this.post('/api/ensure_month', {}); }
   exportCsv()                   { return '/api/export/csv'; }   // direct URL for download
   getBackupStatus()             { return this.get('/api/backup/auto_status'); }
   downloadBackup()              { return '/api/backup'; }        // direct URL for download
+  triggerBackup()               { return this.post('/api/backup/trigger', {}); }
 
   // ── Timetable ───────────────────────────────────────────────────
   getTimetable()                { return this.get('/api/timetable'); }
